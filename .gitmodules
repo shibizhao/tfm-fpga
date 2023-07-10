@@ -1,3 +1,6 @@
 [submodule "baseline/brain1"]
 	path = baseline/brain1
 	url = git@github.com:ndtatbristol/brain1.git
+[submodule "brain1"]
+	path = brain1
+	url = git@github.com:shibizhao/brain1.git
