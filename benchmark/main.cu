@@ -67,8 +67,8 @@ void initialize(){
 
 int main(){
     initialize();
-    dim3 grid_size  = (ceil(rows * cols / thread_size), 1, 1);
-    dim3 block_size = (thread_size, 1, 1);
+    dim3 grid_size(ceil(rows * cols / thread_size), 1, 1);
+    dim3 block_size(thread_size, 1, 1);
 
     int* rx_gpu;
     int* tx_gpu;
