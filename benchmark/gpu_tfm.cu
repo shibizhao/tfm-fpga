@@ -1,6 +1,4 @@
 #include <cuda_runtime.h>
-//#include<thrust/host_vector.h>
-//#include<thrust/device_vector.h>
 
 __global__ void tfm_near_norm(float* real_result,float* imag_result,const int n,const int combs, const float* real_exp,const float* img_exp,const int* transmit,const int* receive,const int* lookup_ind, const int tot_pix, const int grid_x, const int grid_y, const int grid_z, const float* lookup_amp, const float* tt_weight){
 

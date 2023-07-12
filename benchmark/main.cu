@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include <cuda_runtime.h>
 #include <chrono>
+#include <fftw3.h>
+#include <iostream>
 
 #define FLOAT_RAND ((float) rand())/((float) RAND_MAX)
 
@@ -17,6 +19,9 @@ int tx[combs] = {};
 
 float real_result[rows * cols] = {};
 float imag_result[rows * cols] = {};
+
+fftw_complex fft_in[combs * times] = {};
+fftw_complex fft_out[combs * times] = {};
 
 float real_exp[combs * times] = {};
 float imag_exp[combs * times] = {};
@@ -57,6 +62,7 @@ void initialize(){
     for(int i = 0; i < combs * times; ++i){
         real_exp[i] = FLOAT_RAND;
         imag_exp[i] = FLOAT_RAND;
+        fft_in[i] = FLOAT_RAND, FLOAT_RAND};
     }
     for(int i = 0; i < rows * cols * dims; ++i){
         lookup_idx[i] = rows * cols * dims - i;
@@ -101,6 +107,8 @@ int main(){
     cudaEventCreate(&start);
     cudaEventCreate(&end);
     for(int frame = 0; frame < numFrames; ++frame){
+        
+
         cudaEventRecord(start, 0);
         cudaMemcpy(real_result_gpu, real_result, sizeof(real_result), cudaMemcpyHostToDevice);
         cudaMemcpy(imag_result_gpu, imag_result, sizeof(imag_result), cudaMemcpyHostToDevice);
