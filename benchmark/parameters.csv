@@ -1,0 +1,9 @@
+id, filename, n, elements, grid_x, grid_y, grid_z
+1, 1D expt contact example (aluminium), 1000, 64, 394, 249, 1
+2, 1D expt contact example (composite), 500, 64, 410, 442, 1
+3, 1D expt immersion Example , 1400, 64, 1123, 197, 1
+4, 1D expt multiview example (no detect), 3000, 128, 3435, 318, 1
+5, 1D expt multiview example (with detect), 3000, 128, 3435, 318, 1
+6, 1D expt oblique incidence Example, 1001, 64, 1073, 331, 1
+7, 2D expt contact example (aluminium), 500, 128, 15, 15, 32
+8, 2D sim anisotropic example, 600, 128, 20, 20, 33

@@ -7,23 +7,29 @@
 #include <iostream>
 #include <cstring>
 #include <string>
-#define FLOAT_RAND ((float) rand())/((float) RAND_MAX)
+#include <fstream>
+#include <sstream>
+#define FLOAT_RAND (float)((float) rand())/((float) RAND_MAX)
 
-const int times = 1000;
-const int dims = 64;
-const int combs = 2080;
-const int fft_combs = 4096;
-const int fft_parallel = 4;
-const int rows = 394;
-const int cols = 249;
-const int depths = 1;
+
+#if defined PREDEFINED
+    const int times = 1000;
+    const int dims = 64;
+    const int combs = 4096;
+    const int fft_combs = 4096;
+    const int fft_parallel = 4;
+    const int rows = 394;
+    const int cols = 249;
+    const int depths = 1;
+#endif
+// parameter-hook
 
 int grid_x = rows;
 int grid_y = cols;
 int grid_z = depths;
 int thread_size = 128;
 
-const int tot_pix = rows * combs;
+const int tot_pix = rows * cols * depths;
 
 fftw_complex fft_in[times][fft_combs] = {{{1.0, 0.0}, {2.0, 0.0}, {3.0, 0.0}, {4.0, 0.0}}, {{5.0, 0.0}, {6.0, 0.0}, {7.0, 0.0}, {8.0, 0.0}}, {{9.0, 0.0}, {10.0, 0.0}, {11.0, 0.0}, {12.0, 0.0}}};
 fftw_complex fft_out[times][fft_combs];
@@ -63,14 +69,14 @@ float lookup_amp[rows * cols * depths * dims];
     #endif
 #else
     #if defined LINEAR
-        __global__ void tfm_near_norm(float* real_result,float* imag_result,const int n,const int combs, const float* real_exp,const float* img_exp,const int* transmit,const int* receive,const int* lookup_ind, const int tot_pix, const int grid_x, const int grid_y, const int grid_z, const float* lookup_amp, const float* tt_weight);
-    #else
         __global__ void tfm_linear_norm(float* real_result,float* imag_result,const int n,const int combs, const float* real_exp,const float* img_exp,const int* transmit,const int* receive,const float* lookup_time,const float* time, const int tot_pix, const int grid_x, const int grid_y, const int grid_z, const float* lookup_amp, const float* tt_weight);
+    #else
+        __global__ void tfm_near_norm(float* real_result,float* imag_result,const int n,const int combs, const float* real_exp,const float* img_exp,const int* transmit,const int* receive,const int* lookup_ind, const int tot_pix, const int grid_x, const int grid_y, const int grid_z, const float* lookup_amp, const float* tt_weight);
     #endif
 #endif
 
 
-float getElapsedTime(cudaEvent_t start, cudaEvent_t end) {
+double getElapsedTime(cudaEvent_t start, cudaEvent_t end) {
     float elapsedTime;
     cudaEventElapsedTime(&elapsedTime, start, end);
     return elapsedTime;
@@ -83,8 +89,8 @@ void initialize(){
         tt_weight[i] = FLOAT_RAND;
     }
     for(int i = 0; i < rows * cols * depths; ++i){
-        real_result[i] = FLOAT_RAND;
-        imag_result[i] = FLOAT_RAND;
+        real_result[i] = 0;
+        imag_result[i] = 0;
     }
     for(int i = 0; i < combs * times; ++i){
         real_exp[i] = FLOAT_RAND;
@@ -105,31 +111,33 @@ void initialize(){
     }       
 }
 
+int* rx_gpu;
+int* tx_gpu;
+float* real_result_gpu;
+float* imag_result_gpu;
+float* real_result_out_gpu;
+float* imag_result_out_gpu;
+float* real_exp_gpu;
+float* imag_exp_gpu;
+float* tt_weight_gpu;
+int* lookup_idx_gpu;
+float* lookup_amp_gpu;
+float* lookup_time_gpu;
+float* _time_gpu;
+
+#if defined HMC
+    int* lookup_idx_tx_gpu;
+    float* lookup_amp_tx_gpu;
+    float* lookup_time_tx_gpu;
+#endif
+
 
 int main(){
     initialize();
     dim3 grid_size(ceil(rows * cols / thread_size), 1, 1);
     dim3 block_size(thread_size, 1, 1);
 
-    int* rx_gpu;
-    int* tx_gpu;
-    float* real_result_gpu;
-    float* imag_result_gpu;
-    float* real_result_out_gpu;
-    float* imag_result_out_gpu;
-    float* real_exp_gpu;
-    float* imag_exp_gpu;
-    float* tt_weight_gpu;
-    int* lookup_idx_gpu;
-    float* lookup_amp_gpu;
-    float* lookup_time_gpu;
-    float* _time_gpu;
 
-    #if defined HMC
-        int* lookup_idx_tx_gpu;
-        float* lookup_amp_tx_gpu;
-        float* lookup_time_tx_gpu;
-    #endif
 
     cudaMalloc((void**)&real_result_gpu, sizeof(real_result));
     cudaMalloc((void**)&imag_result_gpu, sizeof(imag_result));
@@ -154,9 +162,7 @@ int main(){
 
     int numFrames = 100;
     float totalElapsedTime = 0.0f;
-    cudaEvent_t start, end;
-    cudaEventCreate(&start);
-    cudaEventCreate(&end);
+
 
     fftw_complex* in = reinterpret_cast<fftw_complex*>(fft_in);
     fftw_complex* out1 = reinterpret_cast<fftw_complex*>(fft_out);
@@ -179,7 +185,12 @@ int main(){
     std::chrono::duration<double, std::milli> chrono_duration = chrono_end - chrono_start;
     auto hilbert_per_frame = (chrono_duration.count() / (double) numFrames) / (double) fft_parallel;
 
+    float ss = 0;
+
     for(int frame = 0; frame < numFrames; ++frame){
+        cudaEvent_t start, end;
+        cudaEventCreate(&start);
+        cudaEventCreate(&end);
         cudaEventRecord(start, 0);
         // common
         cudaMemcpy(real_result_gpu, real_result, sizeof(real_result), cudaMemcpyHostToDevice);
@@ -206,7 +217,7 @@ int main(){
         
         #if defined HMC
             #if defined LINEAR
-                //std::cout << "tfm_linear_hmc" << std::endl;
+                // std::cout << "tfm_linear_hmc" << std::endl;
                 tfm_linear_hmc<<<grid_size, block_size>>>(real_result_gpu, imag_result_gpu, 
                                                          times, combs, 
                                                          real_exp_gpu, imag_exp_gpu, 
@@ -217,7 +228,7 @@ int main(){
                                                          lookup_amp_tx_gpu, lookup_amp_gpu, 
                                                          tt_weight_gpu);
             #else
-                //std::cout << "tfm_near_hmc" << std::endl;
+                // std::cout << "tfm_near_hmc" << std::endl;
                 tfm_near_hmc<<<grid_size, block_size>>>(real_result_gpu, imag_result_gpu, 
                                                         times, combs, 
                                                         real_exp_gpu, imag_exp_gpu, 
@@ -227,9 +238,10 @@ int main(){
                                                         lookup_amp_tx_gpu, lookup_amp_gpu, 
                                                         tt_weight_gpu);
             #endif
-        #else
+        #endif
+        #if defined FMC
             #if defined LINEAR
-                //std::cout << "tfm_linear_fmc" << std::endl;
+                // std::cout << "tfm_linear_fmc" << std::endl;
                 tfm_linear_norm<<<grid_size, block_size>>>(real_result_gpu, imag_result_gpu, 
                                                           times, combs, 
                                                           real_exp_gpu, imag_exp_gpu, 
@@ -239,43 +251,57 @@ int main(){
                                                           tot_pix, grid_x, grid_y, grid_z, 
                                                           lookup_amp_gpu, 
                                                           tt_weight_gpu);
+
             #else
-                //std::cout << "tfm_near_fmc" << std::endl;
-                tfm_near_norm<<<grid_size, block_size>>>(real_result_gpu, imag_result_gpu, 
-                                                        times, combs, 
-                                                        real_exp_gpu, imag_exp_gpu, 
-                                                        tx_gpu, rx_gpu, 
-                                                        lookup_idx_gpu, 
-                                                        tot_pix, grid_x, grid_y, grid_z, 
-                                                        lookup_amp_gpu, 
+                // std::cout << "tfm_near_fmc" << std::endl;
+                tfm_near_norm<<<grid_size, block_size>>>(real_result_gpu, imag_result_gpu,
+                                                        times, combs,
+                                                        real_exp_gpu, imag_exp_gpu,
+                                                        tx_gpu, rx_gpu,
+                                                        lookup_idx_gpu,
+                                                        tot_pix, grid_x, grid_y, grid_z,
+                                                        lookup_amp_gpu,
                                                         tt_weight_gpu);
             #endif
         #endif
+        cudaDeviceSynchronize();
 
         cudaMemcpy(real_result_out, real_result_out_gpu, sizeof(real_result_out), cudaMemcpyDeviceToHost);
         cudaMemcpy(imag_result_out, imag_result_out_gpu, sizeof(imag_result_out), cudaMemcpyDeviceToHost);
         cudaDeviceSynchronize();
 
+        for(int i = 0; i < rows * cols * depths; ++i){
+            ss += real_result_out[i] + imag_result_out[i];
+        }
+
         cudaEventRecord(end, 0);
         cudaEventSynchronize(end);
-        float elapsedTime = getElapsedTime(start, end);
-        totalElapsedTime += elapsedTime;    
+        double elapsedTime = getElapsedTime(start, end);
+        totalElapsedTime += elapsedTime;
     }
     double inter_per_frame = totalElapsedTime / numFrames;
     #if defined HMC
-    std::string data_format = "HMC";
+        std::string data_format = "HMC";
     #else
-    std::string data_name = "FMC";
+        std::string data_format = "FMC";
     #endif
     #if defined LINEAR
-    std::string method = "LINEAR";
+        std::string method = "LINEAR";
     #else
-    std::string method = "NEAREST";
+        std::string method = "NEAREST";
     #endif
     std::cout << "================================================" << std::endl;
     std::cout << data_format << ' ' << method << ' ' << "Hilbert time (ms): " << hilbert_per_frame  << std::endl;
     std::cout << data_format << ' ' << method << ' ' << "Interploation time (ms): " << inter_per_frame << std::endl;
     std::cout << data_format << ' ' << method << ' ' << "Frame Rates (fps): " << 1000.0 / (hilbert_per_frame + inter_per_frame) << std::endl;
     std::cout << "================================================" << std::endl;
-    return 0;
+    
+    std::ofstream outfile;
+    outfile.open("results.txt");
+    outfile << hilbert_per_frame << "\n"
+            << inter_per_frame << "\n"
+            << 1000.0 / (hilbert_per_frame + inter_per_frame) << "\n";
+    outfile.close();
+
+    return int(ss);
 }
