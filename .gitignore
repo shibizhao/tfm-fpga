@@ -1,6 +1,16 @@
 
 #
 executable
+results.txt
+
+#fpga
+vitis_hls.log
+tfm_v2/
+tfmchat/
+tfmvadd/
+
+#vscode
+.vscode/
 
 # Prerequisites
 *.d
